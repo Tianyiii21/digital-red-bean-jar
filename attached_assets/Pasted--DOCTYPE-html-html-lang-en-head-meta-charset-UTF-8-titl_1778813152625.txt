@@ -370,6 +370,10 @@ document.getElementById('class-input').addEventListener('keydown', e => {
 });
 
 // ── Bean rendering: jittered hex packing ─────────────────
+// Pre-compute all bean positions once using a seeded RNG.
+// Beans are placed in hex-offset rows from the bottom up,
+// each nudged by a small random jitter so they look hand-poured.
+
 function seededRand(seed) {
   let s = seed >>> 0;
   return () => {
@@ -379,15 +383,16 @@ function seededRand(seed) {
   };
 }
 
+// Build the full list of 300 bean positions once
 function buildBeanPositions() {
   const rand = seededRand(1337);
   const positions = [];
 
   const BEAN_R  = 4.8;
   const BEAN_RY = 4.2;
-  const COL_STEP = BEAN_R * 2 + 1.0;
-  const ROW_STEP = BEAN_RY * 2 + 0.6;
-  const JITTER   = 2.2;
+  const COL_STEP = BEAN_R * 2 + 1.0;   // horizontal spacing
+  const ROW_STEP = BEAN_RY * 2 + 0.6;  // vertical spacing
+  const JITTER   = 2.2;                 // max random nudge
   const MARGIN   = 3;
 
   const cols = Math.floor((JAR_W - MARGIN * 2) / COL_STEP);
@@ -405,7 +410,7 @@ function buildBeanPositions() {
 
       const jx = (rand() - 0.5) * JITTER;
       const jy = (rand() - 0.5) * JITTER;
-      const sizeV = 0.88 + rand() * 0.24;
+      const sizeV = 0.88 + rand() * 0.24; // 0.88–1.12 size variation
       const grad  = Math.floor(rand() * 3);
 
       positions.push({
@@ -443,9 +448,11 @@ function renderJar(doc, beanCount) {
 
   for (let i = 0; i < count; i++) {
     const { x, y, rx, ry, grad } = BEAN_POSITIONS[i];
+    // Skip beans above current fill level
     if (y - ry < fillY - 2) continue;
 
     svg += `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="url(#bg${grad})"/>`;
+    // Specular highlight
     svg += `<ellipse cx="${(x - rx*0.28).toFixed(1)}" cy="${(y - ry*0.30).toFixed(1)}" rx="${(rx*0.30).toFixed(1)}" ry="${(ry*0.24).toFixed(1)}" fill="rgba(255,255,255,0.19)"/>`;
   }
 
@@ -478,7 +485,8 @@ function playWoodenTap() {
     const ctx = audioCtx;
     const now = ctx.currentTime;
 
-    const bufferSize = ctx.sampleRate * 0.06;
+    // Layer 1: short noise burst — the "tap" transient
+    const bufferSize = ctx.sampleRate * 0.06; // 60ms of noise
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data   = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -487,15 +495,18 @@ function playWoodenTap() {
     const noise = ctx.createBufferSource();
     noise.buffer = buffer;
 
+    // Bandpass: shape noise into a light tick (~1200Hz center)
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
     bp.frequency.value = 1200;
     bp.Q.value = 3.5;
 
+    // High-pass to keep it thin and bright
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
     hp.frequency.value = 600;
 
+    // Gain envelope: very fast attack, very short decay
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(0.30, now + 0.002);
@@ -508,6 +519,7 @@ function playWoodenTap() {
     noise.start(now);
     noise.stop(now + 0.04);
 
+    // Layer 2: light high tone (~700Hz) — thin click body, no low warmth
     const osc = ctx.createOscillator();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(700, now);
